@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>RoadLex AI — Punjab Traffic Laws Assistant</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet"/>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --asphalt:     #0d0f14;
+    --asphalt-mid: #161a23;
+    --asphalt-light: #1e232f;
+    --lane:        #252b38;
+    --lane-hover:  #2e3545;
+    --marking:     #2f3a50;
+    --signal-red:  #e8392a;
+    --signal-amber: #f5a623;
+    --signal-green: #27c06f;
+    --headlight:   #f0f4ff;
+    --headlight-dim: #8a93aa;
+    --headlight-ghost: #4a5166;
+    --stripe:      #f5c842;
+    --stripe-dim:  #8a7020;
+    --blue-sign:   #1e6fd9;
+    --blue-sign-light: #5aa3f5;
+    --accent-glow: rgba(240,244,255,0.06);
+    --font-display: 'Syne', sans-serif;
+    --font-body: 'DM Sans', sans-serif;
+    --radius-sm: 6px;
+    --radius-md: 12px;
+    --radius-lg: 20px;
+    --radius-xl: 28px;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--asphalt);
+    color: var(--headlight);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.65;
+    overflow: hidden;
+  }
+
+  /* ── Road background ── */
+  .road-bg {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+  }
+
+  .road-bg::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 80% 60% at 50% 100%, rgba(30,111,217,0.12) 0%, transparent 70%),
+      radial-gradient(ellipse 60% 40% at 50% 0%,   rgba(232,57,42,0.07)  0%, transparent 60%),
+      linear-gradient(180deg, #0a0c10 0%, #0d0f14 40%, #10131a 100%);
+  }
+
+  /* Perspective road lines */
+  .road-perspective {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    height: 55vh;
+    pointer-events: none;
+  }
+
+  /* Animated dashes */
+  .dash-container {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    height: 55vh;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .lane-line {
+    position: absolute;
+    bottom: -60px;
+    left: 50%;
+    width: 3px;
+    transform-origin: bottom center;
+    animation: rushIn 1.4s linear infinite;
+  }
+  .lane-line:nth-child(1) { transform: translateX(-220px); animation-delay: 0s; }
+  .lane-line:nth-child(2) { transform: translateX(-110px); animation-delay: 0.35s; }
+  .lane-line:nth-child(3) { transform: translateX(0px);    animation-delay: 0.7s; }
+  .lane-line:nth-child(4) { transform: translateX(110px);  animation-delay: 1.05s; }
+  .lane-line:nth-child(5) { transform: translateX(220px);  animation-delay: 0.18s; }
+
+  .lane-dash {
+    width: 3px;
+    height: 40px;
+    background: var(--stripe);
+    opacity: 0.25;
+    border-radius: 2px;
+    margin-bottom: 28px;
+    animation: fadeDash 1.4s linear infinite;
+  }
+  .lane-line:nth-child(3) .lane-dash { background: var(--stripe); opacity: 0.4; }
+
+  @keyframes rushIn {
+    0%   { transform: translateX(var(--tx, 0)) scaleX(0.4) scaleY(0.4); opacity: 0; bottom: -60px; }
+    20%  { opacity: 1; }
+    80%  { opacity: 0.6; }
+    100% { transform: translateX(var(--tx, 0)) scaleX(1.2) scaleY(3); opacity: 0; bottom: 120%; }
+  }
+  @keyframes fadeDash { 0%,100% { opacity: 0.1; } 50% { opacity: 0.4; } }
+
+  /* Road surface glow */
+  .road-surface {
+    position: absolute;
+    bottom: 0;
+    left: 0; right: 0;
+    height: 35vh;
+    background: linear-gradient(0deg, rgba(14,17,24,0.95) 0%, transparent 100%);
+  }
+
+  /* ── Traffic signal decoration ── */
+  .signal-deco {
+    position: fixed;
+    top: 2rem;
+    right: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 2;
+    pointer-events: none;
+  }
+  .signal-pole {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    background: #1a1f2e;
+    border: 1px solid #2a3040;
+    border-radius: 14px;
+    padding: 10px 8px;
+  }
+  .signal-light {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    opacity: 0.3;
+  }
+  .signal-light.red   { background: var(--signal-red);   box-shadow: 0 0 8px var(--signal-red); }
+  .signal-light.amber { background: var(--signal-amber); }
+  .signal-light.green { background: var(--signal-green); animation: pulseGreen 2s ease-in-out infinite; opacity: 1; box-shadow: 0 0 10px var(--signal-green); }
+
+  @keyframes pulseGreen {
+    0%,100% { box-shadow: 0 0 6px var(--signal-green); opacity: 0.9; }
+    50%      { box-shadow: 0 0 18px var(--signal-green), 0 0 30px rgba(39,192,111,0.3); opacity: 1; }
+  }
+
+  /* ── Layout shell ── */
+  .app {
+    position: relative;
+    z-index: 1;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 0 1rem;
+  }
+
+  /* ── Header ── */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.2rem 0 1rem;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    flex-shrink: 0;
+  }
+
+  .logo-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-icon {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #1e6fd9 0%, #1255a8 100%);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+    box-shadow: 0 0 20px rgba(30,111,217,0.35);
+    flex-shrink: 0;
+  }
+
+  .logo-text {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .logo-name {
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--headlight);
+    line-height: 1.1;
+  }
+
+  .logo-name span { color: var(--blue-sign-light); }
+
+  .logo-sub {
+    font-size: 0.7rem;
+    color: var(--headlight-ghost);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 400;
+  }
+
+  .header-badges {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .badge {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: 100px;
+    letter-spacing: 0.03em;
+  }
+  .badge-law  { background: rgba(30,111,217,0.15); color: var(--blue-sign-light); border: 1px solid rgba(30,111,217,0.3); }
+  .badge-live { background: rgba(39,192,111,0.12); color: #4dd98a; border: 1px solid rgba(39,192,111,0.3); display: flex; align-items: center; gap: 5px; }
+  .badge-live::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--signal-green); animation: pulseGreen 2s infinite; }
+
+  /* ── Quick topics ── */
+  .quick-bar {
+    display: flex;
+    gap: 8px;
+    padding: 0.75rem 0;
+    overflow-x: auto;
+    flex-shrink: 0;
+    scrollbar-width: none;
+  }
+  .quick-bar::-webkit-scrollbar { display: none; }
+
+  .quick-chip {
+    flex-shrink: 0;
+    padding: 5px 13px;
+    border-radius: 100px;
+    background: var(--asphalt-light);
+    border: 1px solid var(--marking);
+    color: var(--headlight-dim);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .quick-chip:hover {
+    background: var(--lane-hover);
+    border-color: rgba(30,111,217,0.5);
+    color: var(--headlight);
+    transform: translateY(-1px);
+  }
+  .quick-chip .chip-icon { font-size: 13px; }
+
+  /* ── Messages area ── */
+  .messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem 0 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    scrollbar-width: thin;
+    scrollbar-color: var(--marking) transparent;
+  }
+  .messages::-webkit-scrollbar { width: 4px; }
+  .messages::-webkit-scrollbar-track { background: transparent; }
+  .messages::-webkit-scrollbar-thumb { background: var(--marking); border-radius: 4px; }
+
+  /* Welcome state */
+  .welcome {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    gap: 1rem;
+    padding: 2rem 0;
+    animation: fadeUp 0.6s ease;
+  }
+  .welcome-icon {
+    font-size: 3rem;
+    filter: drop-shadow(0 0 20px rgba(30,111,217,0.5));
+  }
+  .welcome-title {
+    font-family: var(--font-display);
+    font-size: 1.6rem;
+    font-weight: 700;
+    text-align: center;
+    letter-spacing: -0.03em;
+    color: var(--headlight);
+  }
+  .welcome-title span { color: var(--blue-sign-light); }
+  .welcome-sub {
+    font-size: 0.9rem;
+    color: var(--headlight-ghost);
+    text-align: center;
+    max-width: 400px;
+    line-height: 1.6;
+  }
+  .welcome-cards {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    width: 100%;
+    max-width: 520px;
+    margin-top: 0.5rem;
+  }
+  .welcome-card {
+    background: var(--asphalt-mid);
+    border: 1px solid var(--marking);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .welcome-card:hover {
+    background: var(--lane);
+    border-color: rgba(30,111,217,0.4);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  }
+  .wc-icon { font-size: 1.2rem; flex-shrink: 0; }
+  .wc-text { font-size: 12.5px; color: var(--headlight-dim); line-height: 1.4; }
+  .wc-text strong { display: block; color: var(--headlight); font-weight: 500; font-size: 13px; margin-bottom: 2px; }
+
+  /* Message bubbles */
+  .message { display: flex; gap: 10px; animation: fadeUp 0.3s ease; }
+  .message.user { flex-direction: row-reverse; }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .avatar {
+    width: 34px; height: 34px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    font-size: 16px;
+    margin-top: 2px;
+  }
+  .avatar.ai {
+    background: linear-gradient(135deg, #1e6fd9, #1255a8);
+    box-shadow: 0 0 14px rgba(30,111,217,0.3);
+  }
+  .avatar.user-av {
+    background: var(--lane);
+    border: 1px solid var(--marking);
+  }
+
+  .bubble {
+    max-width: 78%;
+    padding: 11px 15px;
+    border-radius: var(--radius-md);
+    font-size: 14.5px;
+    line-height: 1.65;
+  }
+  .bubble.ai {
+    background: var(--asphalt-mid);
+    border: 1px solid var(--marking);
+    color: var(--headlight);
+    border-top-left-radius: 4px;
+  }
+  .bubble.user {
+    background: linear-gradient(135deg, #1e6fd9, #1558b8);
+    color: #fff;
+    border-top-right-radius: 4px;
+    box-shadow: 0 4px 16px rgba(30,111,217,0.25);
+  }
+
+  .bubble-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .bubble-name {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--blue-sign-light);
+  }
+  .bubble-time {
+    font-size: 10.5px;
+    color: var(--headlight-ghost);
+  }
+
+  /* Source pills */
+  .sources {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+  .source-pill {
+    font-size: 11px;
+    padding: 3px 9px;
+    border-radius: 100px;
+    background: rgba(30,111,217,0.1);
+    border: 1px solid rgba(30,111,217,0.2);
+    color: var(--blue-sign-light);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* Typing indicator */
+  .typing-bubble {
+    background: var(--asphalt-mid);
+    border: 1px solid var(--marking);
+    border-top-left-radius: 4px;
+    border-radius: var(--radius-md);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .typing-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--headlight-ghost);
+    animation: typingBounce 1.2s ease-in-out infinite;
+  }
+  .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes typingBounce {
+    0%,60%,100% { transform: translateY(0); opacity: 0.4; }
+    30%          { transform: translateY(-5px); opacity: 1; }
+  }
+
+  /* ── Input area ── */
+  .input-area {
+    padding: 0.75rem 0 1.1rem;
+    flex-shrink: 0;
+  }
+
+  .input-shell {
+    background: var(--asphalt-mid);
+    border: 1px solid var(--marking);
+    border-radius: var(--radius-xl);
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    padding: 8px 8px 8px 16px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .input-shell:focus-within {
+    border-color: rgba(30,111,217,0.6);
+    box-shadow: 0 0 0 3px rgba(30,111,217,0.1), 0 4px 20px rgba(0,0,0,0.3);
+  }
+
+  .chat-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--headlight);
+    font-family: var(--font-body);
+    font-size: 14.5px;
+    line-height: 1.5;
+    resize: none;
+    min-height: 24px;
+    max-height: 120px;
+    padding: 4px 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--marking) transparent;
+  }
+  .chat-input::placeholder { color: var(--headlight-ghost); }
+
+  .input-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .btn-send {
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #1e6fd9, #1558b8);
+    border: none;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+    transition: all 0.18s ease;
+    box-shadow: 0 2px 10px rgba(30,111,217,0.3);
+  }
+  .btn-send:hover { transform: scale(1.07); box-shadow: 0 4px 18px rgba(30,111,217,0.5); }
+  .btn-send:active { transform: scale(0.95); }
+  .btn-send:disabled { opacity: 0.4; cursor: default; transform: none; }
+
+  .btn-icon {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: transparent;
+    border: 1px solid var(--marking);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    color: var(--headlight-ghost);
+    transition: all 0.18s ease;
+  }
+  .btn-icon:hover { background: var(--lane); color: var(--headlight); border-color: rgba(255,255,255,0.2); }
+
+  .input-hint {
+    text-align: center;
+    font-size: 11px;
+    color: var(--headlight-ghost);
+    margin-top: 8px;
+  }
+
+  /* ── Scrollbar ── */
+  * { scrollbar-width: thin; scrollbar-color: var(--marking) transparent; }
+
+  /* ── Responsive ── */
+  @media (max-width: 600px) {
+    .header-badges .badge-law { display: none; }
+    .signal-deco { display: none; }
+    .welcome-cards { grid-template-columns: 1fr; }
+    .bubble { max-width: 88%; }
+    .logo-sub { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Road background -->
+<div class="road-bg">
+  <div class="dash-container">
+    <div class="lane-line" style="--tx:-220px">
+      <div class="lane-dash"></div><div class="lane-dash"></div><div class="lane-dash"></div><div class="lane-dash"></div>
+    </div>
+    <div class="lane-line" style="--tx:-110px">
+      <div class="lane-dash"></div><div class="lane-dash"></div><div class="lane-dash"></div><div class="lane-dash"></div>
+    </div>
+    <div class="lane-line" style="--tx:0px">
+      <div class="lane-dash"></div><div class="lane-dash"></div><div class="lane-dash"></div><div class="lane-dash"></div>
+    </div>
+    <div class="lane-line" style="--tx:110px">
+      <div class="lane-dash"></div><div class="lane-dash"></div><div class="lane-dash"></div><div class="lane-dash"></div>
+    </div>
+    <div class="lane-line" style="--tx:220px">
+      <div class="lane-dash"></div><div class="lane-dash"></div><div class="lane-dash"></div><div class="lane-dash"></div>
+    </div>
+  </div>
+  <div class="road-surface"></div>
+</div>
+
+<!-- Traffic signal decoration -->
+<div class="signal-deco">
+  <div class="signal-pole">
+    <div class="signal-light red"></div>
+    <div class="signal-light amber"></div>
+    <div class="signal-light green"></div>
+  </div>
+</div>
+
+<!-- App shell -->
+<div class="app">
+
+  <!-- Header -->
+  <header class="header">
+    <div class="logo-group">
+      <div class="logo-icon">🚦</div>
+      <div class="logo-text">
+        <div class="logo-name">Road<span>Lex</span> AI</div>
+        <div class="logo-sub">Punjab Traffic Laws · 1965</div>
+      </div>
+    </div>
+    <div class="header-badges">
+      <div class="badge badge-law">📘 Motor Vehicle Ordinance</div>
+      <div class="badge badge-live">Online</div>
+    </div>
+  </header>
+
+  <!-- Quick topic chips -->
+  <div class="quick-bar" id="quickBar">
+    <div class="quick-chip" onclick="sendQuick('What is the speed limit on highways in Punjab?')"><span class="chip-icon">🚗</span> Speed Limits</div>
+    <div class="quick-chip" onclick="sendQuick('What documents are required to drive a motor vehicle?')"><span class="chip-icon">📄</span> License & Docs</div>
+    <div class="quick-chip" onclick="sendQuick('What are the penalties for drunk driving?')"><span class="chip-icon">⚖️</span> Penalties</div>
+    <div class="quick-chip" onclick="sendQuick('What are the rules for overtaking a vehicle?')"><span class="chip-icon">🛣️</span> Overtaking Rules</div>
+    <div class="quick-chip" onclick="sendQuick('What are the requirements to get a driving permit?')"><span class="chip-icon">🪪</span> Permits</div>
+    <div class="quick-chip" onclick="sendQuick('What are traffic signal rules in Pakistan?')"><span class="chip-icon">🚦</span> Traffic Signals</div>
+    <div class="quick-chip" onclick="sendQuick('What are the rules for vehicle registration?')"><span class="chip-icon">🔖</span> Registration</div>
+  </div>
+
+  <!-- Messages -->
+  <div class="messages" id="messages">
+    <!-- Welcome state -->
+    <div class="welcome" id="welcome">
+      <div class="welcome-icon">🚦</div>
+      <div class="welcome-title">Your <span>Traffic Law</span> Expert</div>
+      <div class="welcome-sub">Ask me anything about the Punjab Motor Vehicle Ordinance 1965 — speed limits, penalties, permits, road rules & more.</div>
+      <div class="welcome-cards">
+        <div class="welcome-card" onclick="sendQuick('What happens if I drive without a valid license?')">
+          <div class="wc-icon">🪪</div>
+          <div class="wc-text"><strong>Driving without license</strong>What are the legal consequences?</div>
+        </div>
+        <div class="welcome-card" onclick="sendQuick('Explain the rules for road intersections and right of way.')">
+          <div class="wc-icon">🛑</div>
+          <div class="wc-text"><strong>Right of way</strong>Rules at intersections & junctions</div>
+        </div>
+        <div class="welcome-card" onclick="sendQuick('What are the fitness certificate requirements for vehicles?')">
+          <div class="wc-icon">🔧</div>
+          <div class="wc-text"><strong>Vehicle fitness</strong>Certificate & inspection rules</div>
+        </div>
+        <div class="welcome-card" onclick="sendQuick('What are the rules about vehicle lighting and signals?')">
+          <div class="wc-icon">💡</div>
+          <div class="wc-text"><strong>Vehicle lights</strong>Lighting & signalling requirements</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Input area -->
+  <div class="input-area">
+    <div class="input-shell">
+      <textarea
+        class="chat-input"
+        id="chatInput"
+        placeholder="Ask about traffic laws, penalties, permits…"
+        rows="1"
+      ></textarea>
+      <div class="input-actions">
+        <button class="btn-icon" title="Clear chat" onclick="clearChat()">🗑</button>
+        <button class="btn-send" id="sendBtn" onclick="handleSend()" title="Send">
+          ➤
+        </button>
+      </div>
+    </div>
+    <div class="input-hint">Powered by Punjab Motor Vehicle Ordinance 1965 · RAG AI</div>
+  </div>
+
+</div>
+
+<script>
+const messagesEl = document.getElementById('messages');
+const welcomeEl  = document.getElementById('welcome');
+const inputEl    = document.getElementById('chatInput');
+const sendBtn    = document.getElementById('sendBtn');
+
+let isLoading = false;
+
+// Auto-resize textarea
+inputEl.addEventListener('input', () => {
+  inputEl.style.height = 'auto';
+  inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
+});
+
+// Enter to send (Shift+Enter = newline)
+inputEl.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    handleSend();
+  }
+});
+
+function getTime() {
+  return new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+}
+
+function hideWelcome() {
+  if (welcomeEl) {
+    welcomeEl.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+    welcomeEl.style.opacity = '0';
+    welcomeEl.style.transform = 'translateY(-10px)';
+    setTimeout(() => welcomeEl.remove(), 300);
+  }
+}
+
+function addMessage(role, text, sources) {
+  const isAI = role === 'ai';
+  const wrap = document.createElement('div');
+  wrap.className = `message ${isAI ? '' : 'user'}`;
+
+  const sourcesHTML = (sources && sources.length)
+    ? `<div class="sources">
+        <span style="font-size:11px;color:var(--headlight-ghost);margin-right:4px;">📎 Sources:</span>
+        ${sources.map(s => `<span class="source-pill">📄 ${s}</span>`).join('')}
+      </div>`
+    : '';
+
+  wrap.innerHTML = `
+    <div class="avatar ${isAI ? 'ai' : 'user-av'}">${isAI ? '🚦' : '👤'}</div>
+    <div class="bubble ${isAI ? 'ai' : 'user'}">
+      ${isAI ? `<div class="bubble-meta"><span class="bubble-name">RoadLex AI</span><span class="bubble-time">${getTime()}</span></div>` : ''}
+      <div class="bubble-text">${escapeHtml(text)}</div>
+      ${isAI ? sourcesHTML : ''}
+    </div>`;
+
+  messagesEl.appendChild(wrap);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return wrap;
+}
+
+function addTyping() {
+  const wrap = document.createElement('div');
+  wrap.className = 'message';
+  wrap.id = 'typing';
+  wrap.innerHTML = `
+    <div class="avatar ai">🚦</div>
+    <div class="typing-bubble">
+      <div class="typing-dot"></div>
+      <div class="typing-dot"></div>
+      <div class="typing-dot"></div>
+    </div>`;
+  messagesEl.appendChild(wrap);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function removeTyping() {
+  const el = document.getElementById('typing');
+  if (el) el.remove();
+}
+
+function escapeHtml(text) {
+  return text
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\n/g,'<br>');
+}
+
+// ── Backend URL — change this if you deploy to a server ────────────────────
+const BACKEND_URL = 'http://localhost:8000';
+// ───────────────────────────────────────────────────────────────────────────
+
+async function handleSend() {
+  const text = inputEl.value.trim();
+  if (!text || isLoading) return;
+
+  hideWelcome();
+  isLoading = true;
+  sendBtn.disabled = true;
+
+  addMessage('user', text);
+  inputEl.value = '';
+  inputEl.style.height = 'auto';
+
+  addTyping();
+
+  // ── REAL RAG BACKEND CALL ─────────────────────────────────────────────
+  let answer = '';
+  let sources = [];
+  try {
+    const res = await fetch(`${BACKEND_URL}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: text })
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Server error: ${res.status}`);
+    }
+
+    const data = await res.json();
+    answer  = data.answer  || 'No answer returned.';
+    sources = data.sources || [];
+
+  } catch (err) {
+    answer  = `⚠️ Could not reach the backend.\n\nMake sure your FastAPI server is running:\n\nuvicorn main:app --reload\n\nError: ${err.message}`;
+    sources = [];
+  }
+  // ─────────────────────────────────────────────────────────────────────
+
+  removeTyping();
+  addMessage('ai', answer, sources);
+
+  isLoading = false;
+  sendBtn.disabled = false;
+  inputEl.focus();
+}
+
+function sendQuick(question) {
+  inputEl.value = question;
+  handleSend();
+}
+
+function clearChat() {
+  // Remove all messages except welcome
+  const msgs = messagesEl.querySelectorAll('.message');
+  msgs.forEach(m => m.remove());
+  // Re-add welcome
+  const welcome = document.createElement('div');
+  welcome.className = 'welcome';
+  welcome.id = 'welcome';
+  welcome.innerHTML = `
+    <div class="welcome-icon">🚦</div>
+    <div class="welcome-title">Your <span style="color:var(--blue-sign-light)">Traffic Law</span> Expert</div>
+    <div class="welcome-sub">Ask me anything about the Punjab Motor Vehicle Ordinance 1965 — speed limits, penalties, permits, road rules & more.</div>
+    <div class="welcome-cards">
+      <div class="welcome-card" onclick="sendQuick('What happens if I drive without a valid license?')">
+        <div class="wc-icon">🪪</div>
+        <div class="wc-text"><strong>Driving without license</strong>What are the legal consequences?</div>
+      </div>
+      <div class="welcome-card" onclick="sendQuick('Explain the rules for road intersections and right of way.')">
+        <div class="wc-icon">🛑</div>
+        <div class="wc-text"><strong>Right of way</strong>Rules at intersections & junctions</div>
+      </div>
+      <div class="welcome-card" onclick="sendQuick('What are the fitness certificate requirements for vehicles?')">
+        <div class="wc-icon">🔧</div>
+        <div class="wc-text"><strong>Vehicle fitness</strong>Certificate & inspection rules</div>
+      </div>
+      <div class="welcome-card" onclick="sendQuick('What are the rules about vehicle lighting and signals?')">
+        <div class="wc-icon">💡</div>
+        <div class="wc-text"><strong>Vehicle lights</strong>Lighting & signalling requirements</div>
+      </div>
+    </div>`;
+  messagesEl.appendChild(welcome);
+}
+</script>
+</body>
+</html>
